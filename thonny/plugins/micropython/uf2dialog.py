@@ -4,6 +4,7 @@ import time
 from logging import getLogger
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from thonny.common import UserError
 from thonny.misc_utils import get_win_volume_name, list_volumes
 from thonny.plugins.micropython.base_flashing_dialog import (
     BaseFlashingDialog,
@@ -23,7 +24,7 @@ class Uf2FlashingDialog(BaseFlashingDialog):
         return f"https://raw.githubusercontent.com/thonny/thonny/master/data/{self.firmware_name.lower()}-variants-uf2.json"
 
     def get_families_mapping(self) -> Dict[str, str]:
-        codes = ["rp2", "samd21", "samd51", "esp32s2", "esp32s3", "nrf51", "nrf52"]
+        codes = ["rp2", "samd21", "samd51", "esp32s2", "esp32s3", "nrf52"]
         return {family_code_to_name(code): code for code in codes}
 
     def find_targets(self) -> Dict[str, TargetInfo]:
@@ -136,14 +137,19 @@ class Uf2FlashingDialog(BaseFlashingDialog):
     def get_title(self):
         return f"Install or update {self.firmware_name} (UF2)"
 
-    def upload_to_device(
+    def perform_core_operation(
         self,
-        source_path: str,
-        variant_info: Dict[str, Any],
-        download_info: Dict[str, str],
-        target_info: TargetInfo,
+        source_path: Optional[str],
+        variant_info: Optional[Dict[str, Any]],
+        download_info: Optional[Dict[str, str]],
+        target_info: Optional[TargetInfo],
         work_options: Dict[str, Any],
-    ) -> None:
+    ) -> bool:
+        assert source_path
+        assert variant_info
+        assert download_info
+        assert target_info
+
         """Running in a bg thread"""
         size = os.path.getsize(source_path)
         target_path = os.path.join(target_info.path, os.path.basename(source_path))
@@ -169,7 +175,7 @@ class Uf2FlashingDialog(BaseFlashingDialog):
                         break
 
                     if self._state == "cancelling":
-                        break
+                        raise UserError("Cancelling copying per user request")
 
                     fdst.write(block)
                     bytes_copied += len(block)
@@ -192,8 +198,9 @@ class Uf2FlashingDialog(BaseFlashingDialog):
         if self._state == "working":
             self.perform_post_installation_steps(ports_before)
 
-    def _wait_for_new_ports(self, old_ports):
+        return True
 
+    def _wait_for_new_ports(self, old_ports):
         self.append_text("\nWaiting for the port...\n")
         self.set_action_text("Waiting for the port...")
 

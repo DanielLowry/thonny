@@ -7,6 +7,12 @@ import threading
 from logging import getLogger
 from threading import Thread
 
+# make sure thonny folder is in sys.path (relevant in dev)
+thonny_container = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+if thonny_container not in sys.path:
+    sys.path.insert(0, thonny_container)
+
+
 import thonny
 from thonny.backend import (
     BaseBackend,
@@ -16,6 +22,7 @@ from thonny.backend import (
     interrupt_local_process,
 )
 from thonny.common import (
+    PROCESS_ACK,
     CommandToBackend,
     EOFCommand,
     ImmediateCommand,
@@ -129,11 +136,14 @@ class SshCPythonBackend(BaseBackend, SshMixin):
         env = {"THONNY_USER_DIR": "~/.config/Thonny", "THONNY_FRONTEND_SYS_PATH": "[]"}
         self._main_backend_is_fresh = True
 
+        cp_launcher_file = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "cpython_backend", "cp_launcher.py"
+        )
         args = [
             self._target_interpreter,
-            "-m",
-            "thonny.plugins.cpython_backend.cp_launcher",
+            cp_launcher_file,
             self._cwd,
+            repr(self._main_backend_options),
         ]
         logger.info("Starting remote process: %r", args)
         return self._create_remote_process(
@@ -194,6 +204,7 @@ class SshCPythonBackend(BaseBackend, SshMixin):
 
 if __name__ == "__main__":
     thonny.configure_backend_logging()
+    print(PROCESS_ACK)
     args = ast.literal_eval(sys.argv[1])
     backend = SshCPythonBackend(**args)
     backend.mainloop()

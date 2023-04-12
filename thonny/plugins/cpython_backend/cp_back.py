@@ -102,8 +102,9 @@ class MainCPythonBackend(MainBackend):
         report_time("Before loading plugins")
         execute_with_frontend_sys_path(self._load_plugins)
         report_time("After loading plugins")
+        # sys.addaudithook(self.audit_hook)
 
-        # preceding code was run in the directory containing thonny module, now switch to provided
+        # preceding code was run in an empty directory, now switch to provided
         try:
             os.chdir(os.path.expanduser(target_cwd))
         except OSError:
@@ -115,7 +116,8 @@ class MainCPythonBackend(MainBackend):
         # ... and replace current-dir path item
         # start in shell mode (may be later switched to script mode)
         # required in shell mode and also required to overwrite thonny location dir
-        sys.path[0] = ""
+        assert "" not in sys.path  # for avoiding
+        sys.path.insert(0, "")
         sys.argv[:] = [""]  # empty "script name"
 
         if os.name == "nt":
@@ -160,6 +162,45 @@ class MainCPythonBackend(MainBackend):
 
     def get_main_module(self):
         return __main__
+
+    def audit_hook(self, event: str, args):
+        if event == "import":
+            logger.debug("detected Import event with args %r", args)
+            for i, arg in enumerate(args):
+                logger.debug("arg %r: %r", i, arg)
+            self.check_warn_bad_import(args[0].split(".")[0])
+
+    def check_warn_bad_import(self, root_module_name: str):
+        user_dir = sys.path[0]
+        if user_dir == "":
+            user_dir = os.getcwd()
+
+        # TODO: check that user dir is not actually a library or site dir
+
+        conflicting_base = os.path.join(user_dir, root_module_name)
+        conflicting_files = [conflicting_base + "." + ext for ext in ["py", "pyw"]]
+
+        should_rename = False
+        if os.path.isdir(conflicting_base):
+            self._send_output(
+                f"WARNING: Directory '{os.path.basename(conflicting_base)}' shadows a library module.\n",
+                "stderr",
+            )
+            should_rename = True
+
+        for file in conflicting_files:
+            if os.path.isfile(file):
+                self._send_output(
+                    f"WARNING: File '{os.path.basename(file)}' shadows a library module.\n",
+                    "stderr",
+                )
+                should_rename = True
+
+        if should_rename:
+            self._send_output(
+                "This is likely to cause problems\n",
+                "stderr",
+            )
 
     def _read_incoming_msg_line(self) -> str:
         return self._original_stdin.readline()
